@@ -201,11 +201,12 @@ public class CommonUtil {
 	 *
 	 * @param object input object
 	 * @param type target class
-	 * @param <T> target type
-	 * @return converted object
-	 */
-	public static <T> T convertToType(Object object, Class<T> type) {
-		ObjectMapper objectMapper = new ObjectMapper();
+		private static final ObjectMapper NULL_AS_EMPTY_MAPPER =
+		        objectMapper.copy().enable(DeserializationFeature.ACCEPT_EMPTY_STRING_AS_NULL_OBJECT);
+
+		public static <T> T convertToType(Object object, Class<T> type) {
+		    return NULL_AS_EMPTY_MAPPER.convertValue(object, type);
+		}
 		objectMapper.enable(DeserializationFeature.ACCEPT_EMPTY_STRING_AS_NULL_OBJECT);
 		return objectMapper.convertValue(object, type);
 	}
