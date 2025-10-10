@@ -66,10 +66,18 @@ public final class SubstitutionUtil {
      * @throws RuntimeException if parsing, substitution or mapping fails
      */
     public static <T> T substituteJson(String jsonTemplate, Map<String, String> vars, Class<T> clazz) {
+        if (jsonTemplate == null || jsonTemplate.trim().isEmpty()) {
+            throw new IllegalArgumentException("jsonTemplate must not be null or blank");
+        }
+        if (clazz == null) {
+            throw new IllegalArgumentException("Target class must not be null");
+        }
         try {
             JsonNode root = MAPPER.readTree(jsonTemplate);
-            JsonNode replaced = replaceNode(root, vars);
+            JsonNode replaced = replaceNode(root, vars == null ? Map.of() : vars);
             return MAPPER.treeToValue(replaced, clazz);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new RuntimeException("Invalid JSON template: " + e.getOriginalMessage(), e);
         } catch (Exception e) {
             throw new RuntimeException("Failed to substitute JSON template", e);
         }
