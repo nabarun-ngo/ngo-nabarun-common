@@ -123,7 +123,7 @@ public final class SubstitutionUtil {
      */
     public static String substitute(String input, Map<String, String> vars) {
         Matcher matcher = PLACEHOLDER_PATTERN.matcher(input);
-        StringBuffer sb = new StringBuffer();
+        StringBuilder sb = new StringBuilder();
         while (matcher.find()) {
             String key = matcher.group(1).trim();
             String value = vars.getOrDefault(key, "");
