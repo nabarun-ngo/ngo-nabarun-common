@@ -3,155 +3,186 @@ package ngo.nabarun.common.util;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.*;
-import java.util.Map;
-import java.util.regex.*;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
- * Utility class for performing placeholder substitution inside JSON templates and plain text.
+ * Utility class for performing placeholder substitutions in JSON objects or plain text templates.
+ * <p>
+ * Features:
+ * <ul>
+ *     <li>Supports scalar placeholder substitution, e.g., {{name}}</li>
+ *     <li>Supports nested properties, e.g., {{user.name}}</li>
+ *     <li>Supports list iteration with {{#each items}}...{{/each}}</li>
+ *     <li>Works with JSON structures or plain text/HTML templates</li>
+ * </ul>
+ * <p>
+ * Example usage:
+ * <pre>{@code
+ * Map<String, Object> data = Map.of(
+ *     "user", Map.of("name", "Souvik", "email", "souvik@nabarun.org"),
+ *     "org", "Nabarun NGO"
+ * );
  *
- * <p>This class supports substituting placeholders of the form "{{key}}" with values provided
- * in a Map. It can operate on a raw JSON string and will recursively walk the parsed JSON tree
- * to replace placeholders inside string values while preserving the JSON structure for non-text
- * nodes (objects, arrays, numbers, booleans, etc.). After substitution the JSON tree can be
- * converted into a target POJO type using Jackson's ObjectMapper.
- *
- * <p>Notes:
- * - The placeholder pattern is defined by {@link #PLACEHOLDER_PATTERN} and matches double
- *   curly-brace placeholders such as "{{name}}". Whitespace inside the braces is trimmed.
- * - If a placeholder key is not found in the provided variables map, it will be replaced with an
- *   empty string.
- * - The shared {@link #MAPPER} ObjectMapper instance is reused. Jackson's ObjectMapper is
- *   thread-safe for typical read-only operations performed here.
- *
- * Usage example:
- * <pre>
- * Map<String,String> vars = Map.of("name", "Alice");
- * String json = "{\"greeting\": \"Hello {{name}}\"}";
- * MyDto dto = SubstitutionUtil.substituteJson(json, vars, MyDto.class);
- * </pre>
- *
- * @see #substituteJson(String, Map, Class)
- * @see #substitute(String, Map)
+ * String template = "Hello {{user.name}}, welcome to {{org}}!";
+ * String result = JsonTemplateSubstitutor.replaceText(template, data);
+ * System.out.println(result); // Output: Hello Souvik, welcome to Nabarun NGO!
+ * }</pre>
  */
-public final class SubstitutionUtil {
+public class SubstitutionUtil {
 
-    /**
-     * Shared ObjectMapper instance used for parsing and writing JSON.
-     * Reusing a single ObjectMapper is recommended for performance.
-     */
-    private static final ObjectMapper MAPPER = new ObjectMapper();
+	  private static final ObjectMapper mapper = new ObjectMapper();
+	    private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\{\\{(.*?)}}");
+	    private static final Pattern EACH_BLOCK_PATTERN = Pattern.compile("\\{\\{#each (.*?)}}([\\s\\S]*?)\\{\\{/each}}");
 
-    /**
-     * Pattern that matches placeholders in the form {{key}}. The captured group contains the
-     * placeholder key (leading/trailing whitespace is trimmed before lookup).
-     */
-    private static final Pattern PLACEHOLDER_PATTERN = Pattern.compile("\\{\\{(.*?)\\}\\}");
+	    /**
+	     * Substitute placeholders in a JSON node with values from a context POJO or Map.
+	     *
+	     * @param node  JSON node to process
+	     * @param context POJO or Map containing values
+	     * @return substituted JSON node
+	     */
+	    public static JsonNode substitute(JsonNode node, Object context) {
+	        Map<String, Object> values = toMap(context);
+	        if (node.isObject()) {
+	            ObjectNode objectNode = (ObjectNode) node;
+	            objectNode.properties().forEach(entry ->
+	                objectNode.set(entry.getKey(), substitute(entry.getValue(), values))
+	            );
+	            return objectNode;
+	        } else if (node.isArray()) {
+	            ArrayNode arrayNode = (ArrayNode) node;
+	            for (int i = 0; i < arrayNode.size(); i++) {
+	                arrayNode.set(i, substitute(arrayNode.get(i), values));
+	            }
+	            return arrayNode;
+	        } else if (node.isTextual()) {
+	            return TextNode.valueOf(replaceText(node.asText(), values));
+	        } else {
+	            return node;
+	        }
+	    }
 
-    private SubstitutionUtil() {}
+	    /**
+	     * Substitute placeholders in a JSON string using a context POJO or Map and deserialize into a specific type.
+	     *
+	     * @param input   JSON string or plain text
+	     * @param context POJO or Map containing values
+	     * @param type    Type to deserialize output into
+	     * @param <T>     Generic type
+	     * @return substituted object of type T
+	     */
+	    public static <T> T substitute(String input, Object context, Class<T> type) {
+	        try {
+	            JsonNode node = mapper.readTree(input);
+	            JsonNode substitutedNode = substitute(node, context);
+	            return mapper.treeToValue(substitutedNode, type);
+	        } catch (Exception e) {
+	            // fallback for plain text
+	            String replaced = replaceText(input, toMap(context));
+	            if (type.equals(String.class)) {
+	                return type.cast(replaced);
+	            }
+	            throw new RuntimeException("Failed to substitute template", e);
+	        }
+	    }
 
-    /**
-     * Parse the provided JSON template, substitute placeholders using the provided variables map,
-     * and map the resulting JSON tree to an instance of the requested class type.
-     *
-     * <p>All string values inside the JSON are scanned for placeholders and replaced. Non-string
-     * nodes (objects, arrays, numbers, booleans, null) are preserved and only their string
-     * children may be altered.
-     *
-     * @param jsonTemplate the JSON string containing placeholders (must be valid JSON)
-     * @param vars the map of placeholder keys to replacement values; missing keys are treated as
-     *             empty string
-     * @param clazz the target class to map the substituted JSON to
-     * @param <T> the target type
-     * @return an instance of the target type populated from the substituted JSON
-     * @throws RuntimeException if parsing, substitution or mapping fails
-     */
-    public static <T> T substituteJson(String jsonTemplate, Map<String, String> vars, Class<T> clazz) {
-        if (jsonTemplate == null || jsonTemplate.trim().isEmpty()) {
-            throw new IllegalArgumentException("jsonTemplate must not be null or blank");
-        }
-        if (clazz == null) {
-            throw new IllegalArgumentException("Target class must not be null");
-        }
-        try {
-            JsonNode root = MAPPER.readTree(jsonTemplate);
-            JsonNode replaced = replaceNode(root, vars == null ? Map.of() : vars);
-            return MAPPER.treeToValue(replaced, clazz);
-        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-            throw new RuntimeException("Invalid JSON template: " + e.getOriginalMessage(), e);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to substitute JSON template", e);
-        }
-    }
+	    /**
+	     * Replace placeholders in a text template.
+	     *
+	     * @param template text template
+	     * @param data     Map containing values
+	     * @return substituted string
+	     */
+	    public static String replaceText(String template, Map<String, Object> data) {
+	        String result = template;
 
-    /**
-     * Recursively traverses a Jackson JsonNode tree and replaces placeholders in textual nodes.
-     *
-     * <p>Behavior:
-     * - Text nodes: placeholders inside the text are substituted and a new TextNode is returned.
-     * - Array nodes: each element is processed and added to a new ArrayNode.
-     * - Object nodes: each field value is processed and put into a new ObjectNode with the same
-     *   field names.
-     * - Other node types (numbers, booleans, null): returned unchanged.
-     *
-     * @param node the node to process
-     * @param vars the map of placeholder keys to replacement values
-     * @return a JsonNode with placeholders replaced in textual content
-     */
-    private static JsonNode replaceNode(JsonNode node, Map<String, String> vars) {
-        if (node.isTextual()) {
-            return new TextNode(substitute(node.asText(), vars));
-        } else if (node.isArray()) {
-            ArrayNode array = MAPPER.createArrayNode();
-            for (JsonNode element : node) {
-                array.add(replaceNode(element, vars));
-            }
-            return array;
-        } else if (node.isObject()) {
-            ObjectNode obj = MAPPER.createObjectNode();
-            node.properties().forEach(entry->{
-                obj.set(entry.getKey(), replaceNode(entry.getValue(), vars));
-            });
-            return obj;
-        } else {
-            return node;
-        }
-    }
+	        // handle each blocks
+	        Matcher eachMatcher = EACH_BLOCK_PATTERN.matcher(result);
+	        StringBuffer sb = new StringBuffer();
+	        while (eachMatcher.find()) {
+	            String key = eachMatcher.group(1).trim();
+	            String block = eachMatcher.group(2);
+	            Object value = resolvePath(key, data);
 
-    /**
-     * Substitute placeholders in the given input string using values from the vars map.
-     *
-     * <p>Placeholders are identified by the {@code {{key}}} syntax. The key is trimmed before
-     * lookup. If a key is not present in the map, it is replaced with an empty string. Values are
-     * safely quoted when performing regex-based replacements to avoid accidental interpretation of
-     * replacement text as regex constructs.
-     *
-     * @param input the input string possibly containing placeholders
-     * @param vars the map of placeholder keys to replacement values
-     * @return the input string with all placeholders replaced
-     */
-    public static String substitute(String input, Map<String, String> vars) {
-        if (input == null) {
-            return null;
-        }
-        if (vars == null) {
-            return input;
-        }
-    public static String substitute(String input, Map<String, String> vars) {
-        if (input == null) {
-            return null;
-        }
-        if (vars == null) {
-            return input;
-        }
-    
-        Matcher matcher = PLACEHOLDER_PATTERN.matcher(input);
-        StringBuilder sb = new StringBuilder();
-        while (matcher.find()) {
-            String key = matcher.group(1).trim();
-            String value = vars.getOrDefault(key, "");
-            matcher.appendReplacement(sb, Matcher.quoteReplacement(value));
-        }
-        matcher.appendTail(sb);
-        return sb.toString();
-    }
+	            StringBuilder blockResult = new StringBuilder();
+	            if (value instanceof List<?> list) {
+	                for (Object item : list) {
+	                    Map<String, Object> scoped = mergeContext(data, item);
+	                    blockResult.append(replaceText(block, scoped));
+	                }
+	            }
+	            eachMatcher.appendReplacement(sb, Matcher.quoteReplacement(blockResult.toString()));
+	        }
+	        eachMatcher.appendTail(sb);
+	        result = sb.toString();
+
+	        // handle scalar/nested placeholders
+	        Matcher matcher = PLACEHOLDER_PATTERN.matcher(result);
+	        sb = new StringBuffer();
+	        while (matcher.find()) {
+	            String key = matcher.group(1).trim();
+	            Object value = resolvePath(key, data);
+	            matcher.appendReplacement(sb, Matcher.quoteReplacement(value == null ? "" : value.toString()));
+	        }
+	        matcher.appendTail(sb);
+
+	        return sb.toString();
+	    }
+
+	    private static Object resolvePath(String path, Map<String, Object> data) {
+	        String[] parts = path.split("\\.");
+	        Object current = data;
+	        for (String part : parts) {
+	            if (current instanceof Map<?, ?> map) {
+	                current = map.get(part);
+	            } else if (current != null) {
+	                try {
+	                    var field = current.getClass().getDeclaredField(part);
+	                    field.setAccessible(true);
+	                    current = field.get(current);
+	                } catch (Exception e) {
+	                    return null;
+	                }
+	            } else {
+	                return null;
+	            }
+	        }
+	        return current;
+	    }
+
+	    private static Map<String, Object> mergeContext(Map<String, Object> base, Object obj) {
+	        Map<String, Object> copy = new HashMap<>(base);
+	        if (obj == null) return copy;
+	        if (obj instanceof Map<?, ?> mapObj) {
+	            mapObj.forEach((k, v) -> copy.put(k.toString(), v));
+	        } else {
+	            Arrays.stream(obj.getClass().getDeclaredFields()).forEach(f -> {
+	                try {
+	                    f.setAccessible(true);
+	                    copy.put(f.getName(), f.get(obj));
+	                } catch (Exception ignored) {}
+	            });
+	        }
+	        copy.put("this", obj);
+	        return copy;
+	    }
+
+	    /**
+	     * Converts a POJO to a Map using Jackson.
+	     *
+	     * @param obj POJO or Map
+	     * @return Map representation
+	     */
+	    @SuppressWarnings(value = {"unchecked", "rawtypes"})
+		private static Map<String, Object> toMap(Object obj) {
+	        if (obj == null) return Collections.emptyMap();
+	        if (obj instanceof Map<?, ?> map) {
+				HashMap map1 =new HashMap<String, Object>();
+	        	map1.putAll(map);
+	        	return map1;
+	        }
+	        return mapper.convertValue(obj, Map.class);
+	    }
 }
