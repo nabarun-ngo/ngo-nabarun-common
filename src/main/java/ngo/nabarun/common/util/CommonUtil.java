@@ -189,7 +189,10 @@ public class CommonUtil {
 	 * @return converted object
 	 */
 	public static <T> T convertToType(Object object, TypeReference<T> type) {
-		return getObjectMapper().copy().enable(DeserializationFeature.ACCEPT_EMPTY_STRING_AS_NULL_OBJECT).convertValue(object, type);
+		private static final ObjectMapper EMPTY_STRING_MAPPER = objectMapper.copy().enable(DeserializationFeature.ACCEPT_EMPTY_STRING_AS_NULL_OBJECT);
+
+		// In the convertToType method:
+		return EMPTY_STRING_MAPPER.convertValue(object, type);
 	}
 
 	/**
