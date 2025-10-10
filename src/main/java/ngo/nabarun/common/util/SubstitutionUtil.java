@@ -122,6 +122,13 @@ public final class SubstitutionUtil {
      * @return the input string with all placeholders replaced
      */
     public static String substitute(String input, Map<String, String> vars) {
+        if (input == null) {
+            return null;
+        }
+        if (vars == null) {
+            return input;
+        }
+    
         Matcher matcher = PLACEHOLDER_PATTERN.matcher(input);
         StringBuilder sb = new StringBuilder();
         while (matcher.find()) {
