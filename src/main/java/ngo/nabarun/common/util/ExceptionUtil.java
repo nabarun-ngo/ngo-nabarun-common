@@ -2,8 +2,25 @@ package ngo.nabarun.common.util;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 
-public class ExceptionUtils {
+/**
+ * Utility helpers for working with exceptions.
+ *
+ * <p>This class provides formatting helpers that produce a readable, multi-line string
+ * representation of an exception including its type, message, cause chain and full stack
+ * trace. The output is intended for logging or debugging purposes.
+ */
+public class ExceptionUtil {
 
+    /**
+     * Produce a human-friendly, multi-line representation of the provided throwable.
+     *
+     * <p>The returned string contains a header, the exception type and message, an ordered
+     * listing of causes (if present), and the full stack trace. If {@code ex} is null a
+     * short message is returned instead.
+     *
+     * @param ex the throwable to format (may be null)
+     * @return formatted exception details suitable for logging
+     */
     public static String getExceptionDetails(Throwable ex) {
         if (ex == null) {
             return "⚠️ No exception provided.";
