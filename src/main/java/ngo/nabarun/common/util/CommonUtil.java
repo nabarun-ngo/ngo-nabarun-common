@@ -31,13 +31,12 @@ public class CommonUtil {
 		return null;
 	}
 
-	public static <T> T jsonToPojo(String json, Class<T> classz) {
-		try {
-			return objectMapper.readValue(json, classz);
-		} catch (JsonProcessingException e) {
-			e.printStackTrace();
-		}
-		return null;
+	public static <T> T jsonToPojo(String json, Class<T> classz) throws Exception {
+		return objectMapper.readValue(json, classz);
+	}
+	
+	public static <T> T jsonToPojo(String json, TypeReference<T> type) throws Exception {
+		return objectMapper.readValue(json, type);
 	}
 
 	public static <T> T defaultIfNull(T newValue, T currentValue) {
