@@ -128,6 +128,13 @@ public final class SubstitutionUtil {
         if (vars == null) {
             return input;
         }
+    public static String substitute(String input, Map<String, String> vars) {
+        if (input == null) {
+            return null;
+        }
+        if (vars == null) {
+            return input;
+        }
     
         Matcher matcher = PLACEHOLDER_PATTERN.matcher(input);
         StringBuilder sb = new StringBuilder();
