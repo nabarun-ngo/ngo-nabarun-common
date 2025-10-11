@@ -3,6 +3,12 @@ package ngo.nabarun.common.util;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Date;
@@ -220,5 +226,14 @@ public class DateUtil {
 		c.setTime(date);
 		c.add(Calendar.SECOND, seconds);
 		return c.getTime();
+	}
+	
+	public ZonedDateTime getDateTime(Date date,String time,String format) {
+	    LocalDate localDate = date.toInstant()
+	            .atZone(ZoneId.systemDefault())
+	            .toLocalDate();
+	    LocalTime localTime = LocalTime.parse(time, DateTimeFormatter.ofPattern(format));
+	    LocalDateTime localDateTime = LocalDateTime.of(localDate, localTime);
+	    return localDateTime.atZone(ZoneId.systemDefault());
 	}
 }
