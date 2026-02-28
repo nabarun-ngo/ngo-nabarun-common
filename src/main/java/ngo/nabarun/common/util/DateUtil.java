@@ -228,7 +228,7 @@ public class DateUtil {
 		return c.getTime();
 	}
 	
-	public ZonedDateTime getDateTime(Date date,String time,String format) {
+	public static ZonedDateTime getDateTime(Date date,String time,String format) {
 	    LocalDate localDate = date.toInstant()
 	            .atZone(ZoneId.systemDefault())
 	            .toLocalDate();
